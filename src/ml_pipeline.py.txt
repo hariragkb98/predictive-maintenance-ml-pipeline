@@ -1,0 +1,141 @@
+"""
+Machine Learning Pipeline
+-------------------------
+Implements:
+  2.1 Model Preparation
+  2.2 Model Training
+  2.3 Model Evaluation
+  2.4 MLOps (logging and monitoring using MLflow)
+"""
+
+import os
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, classification_report
+import mlflow
+import mlflow.sklearn
+from datetime import datetime
+
+# -------------------------------------------------------
+# STEP 1: LOAD PROCESSED DATA (from Data Pipeline output)
+# -------------------------------------------------------
+
+DATA_PATH = "data/processed_data.csv"  # Adjust if your file path is different
+
+if not os.path.exists(DATA_PATH):
+    raise FileNotFoundError(f"Processed data not found at {DATA_PATH}. Run data_pipeline.py first.")
+
+df = pd.read_csv(DATA_PATH)
+print(f"✅ Data loaded successfully! Shape: {df.shape}")
+
+# Identify target column (replace 'target' with your actual label name)
+TARGET_COL = 'target'
+
+if TARGET_COL not in df.columns:
+    raise ValueError(f"Target column '{TARGET_COL}' not found in dataset. Please check your processed data.")
+
+# -------------------------------------------------------
+# STEP 2: PREPARE FEATURES & TARGET
+# -------------------------------------------------------
+
+X = df.drop(TARGET_COL, axis=1)
+y = df[TARGET_COL]
+
+# Standardize numeric columns
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# -------------------------------------------------------
+# STEP 3: SPLIT DATA INTO TRAIN & TEST
+# -------------------------------------------------------
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X_scaled, y, test_size=0.3, random_state=42, stratify=y
+)
+print(f"✅ Data split into Train: {X_train.shape}, Test: {X_test.shape}")
+
+# -------------------------------------------------------
+# STEP 4: DEFINE MODELS (Model Preparation)
+# -------------------------------------------------------
+
+models = {
+    "Random Forest": RandomForestClassifier(random_state=42, n_estimators=200),
+    "Logistic Regression": LogisticRegression(max_iter=1000, random_state=42)
+}
+
+# -------------------------------------------------------
+# STEP 5: TRAIN, EVALUATE, AND LOG (MLOps)
+# -------------------------------------------------------
+
+mlflow.set_experiment("Predictive Maintenance ML Pipeline")
+
+for name, model in models.items():
+    print(f"\n🚀 Training Model: {name}")
+    
+    with mlflow.start_run(run_name=name):
+        # Train the model
+        model.fit(X_train, y_train)
+        
+        # Predictions
+        y_pred = model.predict(X_test)
+        
+        # Compute metrics
+        acc = accuracy_score(y_test, y_pred)
+        prec = precision_score(y_test, y_pred, zero_division=0)
+        rec = recall_score(y_test, y_pred, zero_division=0)
+        f1 = f1_score(y_test, y_pred, zero_division=0)
+        
+        # Print results
+        print(f"Model: {name}")
+        print(f"Accuracy : {acc:.4f}")
+        print(f"Precision: {prec:.4f}")
+        print(f"Recall   : {rec:.4f}")
+        print(f"F1 Score : {f1:.4f}")
+        print("-" * 50)
+        
+        # Log metrics in MLflow
+        mlflow.log_param("model_name", name)
+        mlflow.log_metric("accuracy", acc)
+        mlflow.log_metric("precision", prec)
+        mlflow.log_metric("recall", rec)
+        mlflow.log_metric("f1_score", f1)
+        
+        # Save model artifact
+        mlflow.sklearn.log_model(model, name)
+        
+        # Optionally log confusion matrix as an artifact
+        cm = confusion_matrix(y_test, y_pred)
+        cm_df = pd.DataFrame(cm, index=["Actual_Neg", "Actual_Pos"], columns=["Pred_Neg", "Pred_Pos"])
+        cm_path = f"artifacts/{name.replace(' ', '_')}_confusion_matrix.csv"
+        os.makedirs("artifacts", exist_ok=True)
+        cm_df.to_csv(cm_path, index=True)
+        mlflow.log_artifact(cm_path)
+        
+        # Save classification report
+        report_path = f"artifacts/{name.replace(' ', '_')}_report.txt"
+        with open(report_path, "w") as f:
+            f.write(classification_report(y_test, y_pred))
+        mlflow.log_artifact(report_path)
+
+print("\n✅ All models trained, evaluated, and logged successfully!")
+
+# -------------------------------------------------------
+# STEP 6: OPTIONAL — SUMMARY EXPORT
+# -------------------------------------------------------
+
+summary = {
+    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    "num_samples": len(df),
+    "num_features": X.shape[1],
+    "models_trained": list(models.keys())
+}
+summary_path = "artifacts/training_summary.txt"
+with open(summary_path, "w") as f:
+    for k, v in summary.items():
+        f.write(f"{k}: {v}\n")
+
+print(f"📄 Training summary saved at: {summary_path}")
