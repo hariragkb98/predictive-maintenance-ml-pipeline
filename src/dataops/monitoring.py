@@ -3,7 +3,10 @@ Monitoring Module for Predictive Maintenance Pipeline
 Author: ramkumarjayakumar
 Date: 2025-10-18
 """
-
+import accuracy
+import port
+from prometheus_client import Gauge, Counter, Histogram, Summary, start_http_server
+import time
 import logging
 from typing import Dict, List, Optional
 from datetime import datetime
@@ -14,6 +17,11 @@ import time
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# Define Prometheus metrics
+pipeline_run_time = Gauge('pipeline_run_time_seconds', 'Time taken for pipeline run')
+data_ingested = Gauge('data_ingested_records', 'Number of records ingested')
+model_accuracy = Gauge('model_accuracy', 'Model accuracy score')
 
 
 class NumpyEncoder(json.JSONEncoder):
@@ -354,10 +362,22 @@ class PipelineMonitor:
             'performance_summary': self.get_performance_summary()
         }
 
-        with open(filepath, 'w') as f:
-            json.dump(export_data, f, indent=2, default=str)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(export_data, f, indent=2, default=str, ensure_ascii=False)
 
         logger.info(f"Metrics exported to {filepath}")
+
+    def start_metrics_server(port=8000):
+        """Start Prometheus metrics server."""
+        start_http_server(port)
+        print(f"✅ Prometheus metrics server running on http://localhost:{port}/metrics")
+
+    def update_metrics(run_time, num_records, accuracy):
+        """Update pipeline metrics."""
+        pipeline_run_time.set(run_time)
+        data_ingested.set(num_records)
+        model_accuracy.set(accuracy)
+
 
 
 if __name__ == "__main__":
@@ -370,14 +390,21 @@ if __name__ == "__main__":
     from src.config.settings import PIPELINE_METRICS
 
     monitor = PipelineMonitor(PIPELINE_METRICS)
+    # monitor.start_metrics_server(port=8000)  # <--- Start Prometheus server
 
-    # Test monitoring
+    # Simulate a pipeline run
     execution_id = monitor.start_execution()
     monitor.start_stage("Test Stage")
-    time.sleep(1)
+    time.sleep(2)
     monitor.record_metric("test_metric", 42.0, stage="Test Stage")
     monitor.end_stage("Test Stage", "SUCCESS")
     monitor.end_execution("SUCCESS")
 
+    # Update Prometheus metrics for Grafana visualization
+    # monitor.update_prometheus_metrics(run_time=2.0, num_records=10000, accuracy=0.94)
+
     print("\nPerformance Summary:")
     print(json.dumps(monitor.get_performance_summary(), indent=2))
+
+
+

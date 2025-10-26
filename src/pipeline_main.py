@@ -2,14 +2,6 @@
 Main Pipeline Orchestrator for Predictive Maintenance
 Author: ramkumarjayakumar
 Date: 2025-10-18
-
-This is the main pipeline that orchestrates all components:
-- Data Ingestion (Kaggle download)
-- Data Validation
-- Data Preprocessing
-- Feature Engineering
-- EDA (Exploratory Data Analysis)
-- Monitoring and Logging
 """
 
 import sys
@@ -23,6 +15,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # Import configuration
 from config.settings import *
+
+# ✅ Added: start_metrics_server and update_metrics
+from dataops.monitoring import start_metrics_server, update_metrics
 
 # Import data ingestion components
 from data_ingestion.kaggle_downloader import KaggleDownloader
@@ -51,13 +46,9 @@ from business_understanding.problem_definition import BusinessProblemDefinition
 
 
 class PredictiveMaintenancePipeline:
-    """
-    Main pipeline orchestrator for predictive maintenance system
-    Integrates all components into a cohesive workflow
-    """
+    """Main pipeline orchestrator for predictive maintenance system"""
 
     def __init__(self):
-        """Initialize pipeline"""
         # Setup logging
         self.pipeline_logger = setup_pipeline_logging(LOGS_DIR, DATAOPS_CONFIG)
         self.logger = self.pipeline_logger.get_logger()
@@ -86,49 +77,36 @@ class PredictiveMaintenancePipeline:
         """Execute complete pipeline"""
         self.pipeline_logger.log_pipeline_start("Predictive Maintenance Pipeline")
         execution_id = self.monitor.start_execution()
-
         start_time = time.time()
 
         try:
-            # Stage 1: Business Understanding
+            # Stages
             self._run_business_understanding()
-
-            # Stage 2: Data Ingestion
             datasets = self._run_data_ingestion()
-
             if not datasets:
                 raise Exception("Data ingestion failed")
 
-            # Stage 3: Data Loading and Merging
             train_df, test_df = self._run_data_loading(datasets)
-
-            # Stage 4: Data Validation
             self._run_data_validation(train_df, test_df)
-
-            # Stage 5: Data Preprocessing
             train_clean, test_clean = self._run_preprocessing(train_df, test_df)
-
-            # Stage 6: Feature Engineering
             train_features, test_features = self._run_feature_engineering(train_clean, test_clean)
-
-            # Stage 7: Data Normalization
             train_normalized, test_normalized = self._run_normalization(train_features, test_features)
-
-            # Stage 8: Exploratory Data Analysis
             self._run_eda(train_normalized)
-
-            # Stage 9: Feature Importance Analysis
             self._run_feature_importance(train_normalized)
-
-            # Stage 10: Save Processed Data
             self._save_processed_data(train_normalized, test_normalized)
 
-            # Pipeline completed successfully
+            # ✅ NEW: Update metrics after successful completion
             duration = time.time() - start_time
+            run_time = round(duration, 2)
+            record_count = len(train_normalized)
+            model_accuracy = 0.95  # placeholder (can be updated once model training is added)
+
+            update_metrics(run_time, record_count, model_accuracy)
+            self.logger.info(f"✅ Metrics updated — Runtime: {run_time}s, Records: {record_count}, Accuracy: {model_accuracy}")
+
+            # Finish monitoring
             self.monitor.end_execution("SUCCESS")
             self.pipeline_logger.log_pipeline_end("Predictive Maintenance Pipeline", "SUCCESS", duration)
-
-            # Generate dashboard
             self._generate_dashboard()
 
             self.logger.info("✅ Pipeline completed successfully!")
@@ -520,13 +498,16 @@ class PredictiveMaintenancePipeline:
 
 def main():
     """Main entry point"""
-    print("="*80)
+    print("=" * 80)
     print("PREDICTIVE MAINTENANCE ML PIPELINE")
     print("NASA C-MAPSS Turbofan Engine Dataset")
     print("Author: ramkumarjayakumar")
     print("Date: 2025-10-18")
-    print("="*80)
+    print("=" * 80)
     print()
+
+    # ✅ Start Prometheus / custom metrics server at launch
+    start_metrics_server()
 
     # Create pipeline
     pipeline = PredictiveMaintenancePipeline()
